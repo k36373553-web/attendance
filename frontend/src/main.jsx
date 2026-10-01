@@ -1,8 +1,9 @@
 import React,{useState,useRef,useEffect,createContext,useContext} from 'react';import {createRoot} from 'react-dom/client';import axios from 'axios';import './index.css';
 import {FiCamera,FiLock,FiLogOut,FiUserPlus,FiBell,FiX,FiHome,FiList,FiUser,FiCheckCircle,FiShield,FiWifi} from 'react-icons/fi';
 import {ResponsiveContainer,LineChart,Line,XAxis,YAxis,Tooltip,Legend,BarChart,Bar} from 'recharts';
-const api=axios.create({baseURL:'/api'});api.interceptors.request.use(c=>{if(localStorage.token)c.headers.Authorization='Bearer '+localStorage.token;return c});
-api.interceptors.response.use(r=>r,async e=>{const c=e.config;if(e.response?.status===401&&!c._r&&localStorage.refresh&&!c.url.includes('/auth/')){c._r=1;try{const{data}=await axios.post('/api/auth/refresh',{refresh:localStorage.refresh});localStorage.token=data.token;return api(c)}catch{localStorage.clear();location.reload()}}return Promise.reject(e)});
+const API_BASE_URL=(import.meta.env.VITE_API_URL||(import.meta.env.PROD?'https://attendance-rmb0.onrender.com/api':'/api')).replace(/\/$/,'');
+const api=axios.create({baseURL:API_BASE_URL});api.interceptors.request.use(c=>{if(localStorage.token)c.headers.Authorization='Bearer '+localStorage.token;return c});
+api.interceptors.response.use(r=>r,async e=>{const c=e.config;if(e.response?.status===401&&!c._r&&localStorage.refresh&&!c.url.includes('/auth/')){c._r=1;try{const{data}=await axios.post(API_BASE_URL+'/auth/refresh',{refresh:localStorage.refresh});localStorage.token=data.token;return api(c)}catch{localStorage.clear();location.reload()}}return Promise.reject(e)});
 const err=e=>e.response?.data?.message||e.response?.data?.error||e.message;
 const Brand=createContext();const out=()=>{localStorage.clear();location.reload()};
 const tm=x=>x?new Date(x).toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'}):'—';
@@ -52,7 +53,7 @@ function Settings(){const[c,setC]=useState(null),[m,setM]=useState('');useEffect
  <button className="btn col-span-2" onClick={save}>Save settings</button>{m&&<p className="text-sm col-span-2">{m}</p>}</div><Pwd/></div>}
 function Admin(){const[tab,setTab]=useState('dash'),[s,setS]=useState(null),[emps,setE]=useState([]),[rg,setRg]=useState({from:iso(0),to:iso(0)}),[reg,setReg]=useState(false),[shots,setShots]=useState([]),[f,setF]=useState({}),[m,setM]=useState(''),[notice,setNotice]=useState(''),[saving,setSaving]=useState(false),[mod,setMod]=useState(null),[ns,setNs]=useState([]),[bell,setBell]=useState(false),[q,setQ]=useState('');
  const load=()=>{api.get('/attendance/summary',{params:rg}).then(r=>setS(r.data));api.get('/employees').then(r=>setE(r.data))};useEffect(load,[rg.from,rg.to]);
- useEffect(()=>{const es=new EventSource('/api/notifications/stream?t='+localStorage.token);es.onmessage=e=>{setNs(n=>[JSON.parse(e.data),...n]);load()};return()=>es.close()},[]);
+ useEffect(()=>{const es=new EventSource(API_BASE_URL+'/notifications/stream?t='+localStorage.token);es.onmessage=e=>{setNs(n=>[JSON.parse(e.data),...n]);load()};return()=>es.close()},[]);
  const save=async()=>{if(saving)return;setSaving(true);setM('');setNotice('');try{const{data}=await api.post('/employees',{...f,images:shots});setReg(false);setShots([]);setF({});setM('');setNotice(`Employee registered with ${data.acceptedPhotos} valid photos.${data.rejectedPhotos?.length?` Skipped: ${data.rejectedPhotos.join('; ')}`:''}`);load()}catch(e){const data=e.response?.data;setM(data?.rejectedPhotos?.join('; ')||err(e))}finally{setSaving(false)}};
  const steps=['Look straight at the camera','Turn just a little left; keep both eyes visible','Turn just a little right; keep both eyes visible','Look straight with a gentle smile','Look straight at the camera again'];
  const P=[[0,0,'Today'],[1,1,'Yesterday'],[6,0,'7 days'],[29,0,'30 days']];

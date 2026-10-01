@@ -1,7 +1,9 @@
 require('dotenv').config();
 const express=require('express'),mongoose=require('mongoose'),jwt=require('jsonwebtoken'),bcrypt=require('bcryptjs'),cors=require('cors'),helmet=require('helmet'),rl=require('express-rate-limit');
 const app=express();app.set('trust proxy',1);
-app.use(helmet(),cors({origin:process.env.CLIENT_URL}),express.json({limit:'15mb'}),rl({windowMs:60000,max:150}));
+const CLIENT_URL=process.env.CLIENT_URL||'https://attendance-3cor.vercel.app';
+const FACE_URL=(process.env.FACE_URL||'https://attendance-rose-tau.vercel.app').replace(/\/$/,'');
+app.use(helmet(),cors({origin:CLIENT_URL}),express.json({limit:'15mb'}),rl({windowMs:60000,max:150}));
 const S=mongoose.Schema,ID=S.Types.ObjectId;
 const User=mongoose.model('User',new S({name:String,designation:String,phone:String,email:{type:String,unique:true},password:String,role:{type:String,default:'employee'},enabled:{type:Boolean,default:true},embeddings:{type:[[Number]],select:false},mean:{type:[Number],select:false}}));
 const AS=new S({user:{type:ID,ref:'User'},date:String,checkIn:Date,checkOut:Date,status:String,lateMin:{type:Number,default:0}});AS.index({user:1,date:1},{unique:true});
@@ -20,7 +22,7 @@ let publicIpCache={ip:'',expires:0};
 const getPublicIp=async()=>{if(publicIpCache.expires>Date.now())return publicIpCache.ip;const r=await fetch('https://api.ipify.org',{signal:AbortSignal.timeout(5000)});if(!r.ok)throw new Error('Public IP lookup failed');const ip=(await r.text()).trim();if(!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip))throw new Error('Invalid public IP response');publicIpCache={ip,expires:Date.now()+60000};return ip};
 const officeOnly=async(q,s,n)=>{const c=await cfg();const list=[...(process.env.ALLOWED_OFFICE_IPS||'').split(','),...c.ips].map(x=>x.trim()).filter(Boolean);
  let ip=(q.ip||'').replace('::ffff:','');if(list.length&&privateIp(ip)){try{ip=await getPublicIp()}catch{return s.status(503).json({error:'NETWORK_CHECK',message:'Could not verify this network. Try again shortly.'})}}if(list.length&&!list.some(x=>inCidr(ip,x)))return s.status(403).json({error:'WIFI',message:'Attendance is limited to the registered office network.'});n()};
-const embed=async image=>{const r=await fetch(process.env.FACE_URL+'/embed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image})});return r.json()};
+const embed=async image=>{const r=await fetch(FACE_URL+'/embed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image})});return r.json()};
 const cos=(a,b)=>{let d=0,x=0,y=0;for(let i=0;i<a.length;i++){d+=a[i]*b[i];x+=a[i]**2;y+=b[i]**2}return d/Math.sqrt(x*y)};
 const tok=u=>jwt.sign({id:u._id,role:u.role},process.env.JWT_SECRET,{expiresIn:'15m'});
 
@@ -70,7 +72,7 @@ app.delete('/api/holidays/:date',auth('admin'),ah(async(q,s)=>{await Hol.deleteO
 app.get('/api/settings',auth('admin'),ah(async(q,s)=>s.json(await cfg())));
 app.put('/api/settings',auth('admin'),ah(async(q,s)=>{const c=await cfg();Object.assign(c,q.body);await c.save();s.json(c)}));
 const clients=new Set();
-const verify=async frames=>{const r=await fetch(process.env.FACE_URL+'/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({frames})});return r.json()};
+const verify=async frames=>{const r=await fetch(FACE_URL+'/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({frames})});return r.json()};
 const hist=async(uid,from,to)=>{const u=await User.findById(uid),born=u._id.getTimestamp().toISOString().slice(0,10),today=ist().date;
  const rows=await Att.find({user:uid,date:{$gte:from,$lte:to}}),hol=new Set((await Hol.find({date:{$gte:from,$lte:to}})).map(h=>h.date)),A=Object.fromEntries(rows.map(r=>[r.date,r]));
  const st={present:0,half:0,leave:0,absent:0,late:0},out=[];
@@ -86,4 +88,4 @@ app.get('/api/public',ah(async(q,s)=>s.json({logo:(await cfg()).logo||null})));
 app.post('/api/auth/refresh',ah(async(q,s)=>{try{const p=jwt.verify(q.body.refresh,process.env.JWT_SECRET);if(p.type!=='r')throw 0;const u=await User.findById(p.id);if(!u||!u.enabled)throw 0;s.json({token:tok(u)})}catch{s.status(401).json({error:'Session expired'})}}));
 app.get('/api/notifications/stream',(q,s)=>{try{if(jwt.verify(q.query.t,process.env.JWT_SECRET).role!=='admin')throw 0}catch{return s.sendStatus(401)}
  s.set({'Content-Type':'text/event-stream','Cache-Control':'no-cache',Connection:'keep-alive'});s.flushHeaders();clients.add(s);q.on('close',()=>clients.delete(s))});
-mongoose.connect(process.env.MONGO_URI).then(()=>app.listen(5000,()=>console.log('API :5000')));
+mongoose.connect(process.env.MONGO_URI).then(()=>app.listen(process.env.PORT||5000,()=>console.log(`API :${process.env.PORT||5000}`)));

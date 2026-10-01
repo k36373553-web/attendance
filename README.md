@@ -13,6 +13,14 @@ Run 3 services: MongoDB, face-service (port 8000), backend (5000), frontend (517
    In Command Prompt, activate with `.venv\Scripts\activate.bat` instead. On macOS/Linux, create the venv with `python3.11 -m venv .venv` and activate it with `source .venv/bin/activate` before installing requirements.
 2. backend: `cd backend && cp .env.example .env && npm i && npm run seed && npm start`
 3. frontend: `cd frontend && npm i && npm run dev` (camera needs https or localhost)
+
+## Deployment URLs
+- Frontend: https://attendance-3cor.vercel.app/
+- Backend API: https://attendance-rmb0.onrender.com
+- Face service: https://attendance-rose-tau.vercel.app/
+
+The production frontend uses the backend API by default. To override it in Vercel, set `VITE_API_URL` to `https://attendance-rmb0.onrender.com/api` and redeploy. In Render, set `MONGO_URI`, `JWT_SECRET`, `CLIENT_URL=https://attendance-3cor.vercel.app`, `FACE_URL=https://attendance-rose-tau.vercel.app`, and `ALLOWED_OFFICE_IPS` as needed. Render provides `PORT` automatically. Do not commit real credentials; use `backend/.env.example` only as a local template.
+
 Office IP: open https://ifconfig.me on the office WiFi and put the IP in backend/.env ALLOWED_OFFICE_IPS (or Settings API). Restart the backend after changing .env. Local/private requests are checked against the backend machine's public egress IP, which supports the local Vite proxy setup. If the office public IP changes, update the allowlist.
 Threshold: default cosine 0.45 (Settings). Raise for fewer false accepts, lower for fewer false rejects; tune with real staff photos.
 Liveness: only a passive sharpness/texture heuristic. It is NOT robust anti-spoofing; add MiniFASNet before relying on it.
