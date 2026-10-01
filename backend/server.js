@@ -15,7 +15,7 @@ const Log=mongoose.model('Log',new S({user:ID,type:String,result:String,at:{type
 const Cfg=mongoose.model('Cfg',new S({cutoff:{type:Number,default:585},checkoutFrom:{type:Number,default:780},halfAfter:{type:Number,default:820},halfOutBefore:{type:Number,default:900},threshold:{type:Number,default:0.45},ips:[String],logo:String}));
 const cfg=async()=>(await Cfg.findOne())||Cfg.create({});
 const ist=(d=new Date)=>{const p=Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Kolkata',hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}).formatToParts(d).map(x=>[x.type,x.value]));return{date:`${p.year}-${p.month}-${p.day}`,min:+p.hour*60+ +p.minute}};
-const ah=fn=>(q,s,n)=>fn(q,s,n).catch(e=>s.status(500).json({error:e.message}));
+const ah=fn=>(q,s,n)=>fn(q,s,n).catch(e=>s.status(e.statusCode||500).json({error:e.message}));
 const auth=role=>(q,s,n)=>{try{q.u=jwt.verify((q.headers.authorization||'').slice(7),process.env.JWT_SECRET);if(q.u.type==='r'||role&&q.u.role!==role)return s.status(403).json({error:'Forbidden'});n()}catch{s.status(401).json({error:'Unauthorized'})}};
 const ip2n=i=>i.split('.').reduce((a,x)=>a*256+ +x,0);
 const inCidr=(ip,c)=>{const[b,m='32']=c.split('/');if(!/^\d+\.\d+\.\d+\.\d+$/.test(ip)||!/^\d+\.\d+\.\d+\.\d+$/.test(b))return ip===b;const sh=2**(32-+m);return Math.floor(ip2n(ip)/sh)===Math.floor(ip2n(b)/sh)};
@@ -24,7 +24,13 @@ let publicIpCache={ip:'',expires:0};
 const getPublicIp=async()=>{if(publicIpCache.expires>Date.now())return publicIpCache.ip;const r=await fetch('https://api.ipify.org',{signal:AbortSignal.timeout(5000)});if(!r.ok)throw new Error('Public IP lookup failed');const ip=(await r.text()).trim();if(!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip))throw new Error('Invalid public IP response');publicIpCache={ip,expires:Date.now()+60000};return ip};
 const officeOnly=async(q,s,n)=>{const c=await cfg();const list=[...(process.env.ALLOWED_OFFICE_IPS||'').split(','),...c.ips].map(x=>x.trim()).filter(Boolean);
  let ip=(q.ip||'').replace('::ffff:','');if(list.length&&privateIp(ip)){try{ip=await getPublicIp()}catch{return s.status(503).json({error:'NETWORK_CHECK',message:'Could not verify this network. Try again shortly.'})}}if(list.length&&!list.some(x=>inCidr(ip,x)))return s.status(403).json({error:'WIFI',message:'Attendance is limited to the registered office network.'});n()};
-const embed=async image=>{const r=await fetch(FACE_URL+'/embed',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image})});return r.json()};
+const faceRequest=async(path,body)=>{
+ const r=await fetch(FACE_URL+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+ let data;try{data=await r.json()}catch{const e=new Error(`Face service returned a non-JSON response (HTTP ${r.status})`);e.statusCode=502;throw e}
+ if(!r.ok){const e=new Error(data.error||`Face service request failed (HTTP ${r.status})`);e.statusCode=502;throw e}
+ return data;
+};
+const embed=async image=>faceRequest('/embed',{image});
 const cos=(a,b)=>{let d=0,x=0,y=0;for(let i=0;i<a.length;i++){d+=a[i]*b[i];x+=a[i]**2;y+=b[i]**2}return d/Math.sqrt(x*y)};
 const tok=u=>jwt.sign({id:u._id,role:u.role},process.env.JWT_SECRET,{expiresIn:'15m'});
 
@@ -74,7 +80,7 @@ app.delete('/api/holidays/:date',auth('admin'),ah(async(q,s)=>{await Hol.deleteO
 app.get('/api/settings',auth('admin'),ah(async(q,s)=>s.json(await cfg())));
 app.put('/api/settings',auth('admin'),ah(async(q,s)=>{const c=await cfg();Object.assign(c,q.body);await c.save();s.json(c)}));
 const clients=new Set();
-const verify=async frames=>{const r=await fetch(FACE_URL+'/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({frames})});return r.json()};
+const verify=async frames=>faceRequest('/verify',{frames});
 const hist=async(uid,from,to)=>{const u=await User.findById(uid),born=u._id.getTimestamp().toISOString().slice(0,10),today=ist().date;
  const rows=await Att.find({user:uid,date:{$gte:from,$lte:to}}),hol=new Set((await Hol.find({date:{$gte:from,$lte:to}})).map(h=>h.date)),A=Object.fromEntries(rows.map(r=>[r.date,r]));
  const st={present:0,half:0,leave:0,absent:0,late:0},out=[];
