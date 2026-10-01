@@ -3,7 +3,9 @@ const express=require('express'),mongoose=require('mongoose'),jwt=require('jsonw
 const app=express();app.set('trust proxy',1);
 const CLIENT_URL=process.env.CLIENT_URL||'https://attendance-3cor.vercel.app';
 const FACE_URL=(process.env.FACE_URL||'https://attendance-rose-tau.vercel.app').replace(/\/$/,'');
-app.use(helmet(),cors({origin:CLIENT_URL}),express.json({limit:'15mb'}),rl({windowMs:60000,max:150}));
+const allowedClientOrigins=new Set(CLIENT_URL.split(',').map(origin=>origin.trim().replace(/\/$/,'')).filter(Boolean));
+const isVercelPreview=origin=>/^https:\/\/attendance-3cor-[a-z0-9]+(?:-[a-z0-9]+)*\.vercel\.app$/i.test(origin);
+app.use(helmet(),cors({origin:(origin,callback)=>callback(null,!origin||allowedClientOrigins.has(origin)||isVercelPreview(origin))}),express.json({limit:'15mb'}),rl({windowMs:60000,max:150}));
 const S=mongoose.Schema,ID=S.Types.ObjectId;
 const User=mongoose.model('User',new S({name:String,designation:String,phone:String,email:{type:String,unique:true},password:String,role:{type:String,default:'employee'},enabled:{type:Boolean,default:true},embeddings:{type:[[Number]],select:false},mean:{type:[Number],select:false}}));
 const AS=new S({user:{type:ID,ref:'User'},date:String,checkIn:Date,checkOut:Date,status:String,lateMin:{type:Number,default:0}});AS.index({user:1,date:1},{unique:true});
